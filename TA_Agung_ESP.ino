@@ -1,9 +1,9 @@
 #include <WiFi.h>
 #include <PubSubClient.h>                 // Install Library by Nick O'Leary version 2.7.0
-// #include "mqtt_secrets.h"
+#include "mqtt_secrets.h"
 
-char nama_wifi[] = "samikro.id 2023";
-char password_wifi[] = "samikroid23";
+char nama_wifi[] = "RND_Wifi";
+char password_wifi[] = "RND12345";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -67,14 +67,16 @@ void callback(char* topic, byte* payload, unsigned int length) { //A new message
 }
 
 void setup(){
-    delay(300);
+    // delay(300);
     Serial.begin(115200);
 
     initLed();
 
     status.connection = false;
     status.mqtt = false;
+    timeout.connection = millis() - TIMEOUT_RECONNECT;
 
+    Serial.println("Init");
 }
 
 void loop(){
@@ -100,9 +102,10 @@ void loop(){
 
     if(status.mqtt){
         status.mqtt = false;
+
+        Serial.println(mqtt_payload);
+        clearDataMqtt();
     }
-
-
 }
 
 void publishChart(){
@@ -118,13 +121,13 @@ void publishChart(){
         client.disconnect();
         client.setServer(MQTT2_BROKER, MQTT2_PORT);
 
-        // for(n=0; n<MQTT2_TIMEOUT; n++){
-        //     if(client.connect(SECRET_MQTT_CLIENT_ID, SECRET_MQTT_USERNAME, SECRET_MQTT_PASSWORD)){
-        //         chartIsConnected = true;
+        for(n=0; n<MQTT2_TIMEOUT; n++){
+            if(client.connect(SECRET_MQTT_CLIENT_ID, SECRET_MQTT_USERNAME, SECRET_MQTT_PASSWORD)){
+                chartIsConnected = true;
 
-        //         break;
-        //     }
-        // }
+                break;
+            }
+        }
 
         if(chartIsConnected){
             float field1=0;
@@ -134,6 +137,7 @@ void publishChart(){
             float field5=0;
             float field6=0;
             float field7=0;
+            float field8=0;
             SYSTEM_DataTypeDef sensor;
             
             field1 = sensor.temperature;
@@ -143,8 +147,8 @@ void publishChart(){
             field4 = sensor.capacity;
             field5 = sensor.flag;
 
-            sprintf(text,"field1=%.0f&field2=%.2f&field3=%.0f&field4=%.0f&field5=%.0f&status=MQTTPUBLISH", 
-                    field1, field2, field3, field4, field5);
+            sprintf(text,"field1=%.0f&field2=%.2f&field3=%.0f&field4=%.0f&field5=%.0f&field6=%.0f&field7=%.0ffield8=%.0f&status=MQTTPUBLISH", 
+                    field1, field2, field3, field4, field5, field6, field7, field8);
 
             char topic[50];
             memset(&topic, 0, 50);
