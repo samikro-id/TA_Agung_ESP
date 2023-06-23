@@ -60,7 +60,7 @@ float calibrationFactor = 4.5;
 ADS1115 ads1(0x48);
 ADS1115 ads2(0x49);
 
-LiquidCrystal_I2C lcd(0x3F,20,4);
+LiquidCrystal_I2C lcd(0x27,20,4);
 
 typedef struct{
     bool connection;
@@ -105,8 +105,11 @@ void setup(){
     Serial.begin(115200);
 
     initLed();
-    lcdInit();
     flowInit();
+    relayInit();
+    lcdInit();
+    lcd.setCursor(0,0);
+    lcd.print("TA Agung 2023");
 
     ads1.begin();
     ads1.setDataRate(7);
@@ -121,6 +124,7 @@ void setup(){
     offCharge();
         
     timeout.connection = millis() - TIMEOUT_RECONNECT;
+    timeout.update = millis();
 
     Serial.println("Init");
 }
@@ -156,6 +160,8 @@ void loop(){
     if((millis() - timeout.update) > TIMEOUT_UPDATE){
         uint32_t elapsed_time = millis() - timeout.update;
 
+        Serial.println("=========== update ==============");
+
         data.flow = flowValue(elapsed_time);
         data.i_bat = iBatt();
         data.i_panel = iPanel();
@@ -165,13 +171,24 @@ void loop(){
         data.v_panel = vPanel();
         data.water_level = waterLevel();
 
+        lcd.clear();
+        lcd.setCursor(0,0);
+        lcd.print("V Batt  : "); lcd.print(data.v_bat);
+        lcd.setCursor(0,1);
+        lcd.print("I Batt  : "); lcd.print(data.i_bat);
+
+        lcd.setCursor(0,2);
+        lcd.print("V Panel : "); lcd.print(data.v_panel);
+        lcd.setCursor(0,3);
+        lcd.print("I Panel : "); lcd.print(data.i_panel);
+
         Serial.print("Flow ");  Serial.println(data.flow);
-        Serial.print("I Bat ");  Serial.println(data.i_bat);
-        Serial.print("I Panel ");  Serial.println(data.i_panel);
+        // Serial.print("I Bat ");  Serial.println(data.i_bat);
+        // Serial.print("I Panel ");  Serial.println(data.i_panel);
         Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
         Serial.print("Turbidity2 ");  Serial.println(data.turbidity2);
-        Serial.print("V Bat ");  Serial.println(data.v_bat);
-        Serial.print("V Panel ");  Serial.println(data.v_panel);
+        // Serial.print("V Bat ");  Serial.println(data.v_bat);
+        // Serial.print("V Panel ");  Serial.println(data.v_panel);
         Serial.print("Level ");  Serial.println(data.water_level);
         
         flowEnable();
@@ -226,6 +243,17 @@ void publishChart(){
 }
 
 /***** Relay Handle ******/
+void relayInit(){
+    pinMode(RELAY_1_PIN, OUTPUT);
+    pinMode(RELAY_2_PIN, OUTPUT);
+    pinMode(RELAY_3_PIN, OUTPUT);
+    pinMode(RELAY_4_PIN, OUTPUT);
+
+    offCharge();
+    closeValve1();
+    closeValve2();
+}
+
 void onCharge(){
     digitalWrite(RELAY_2_PIN, RELAY_OFF);
     delay(10);
@@ -247,7 +275,7 @@ void openValve1(){
 
 void closeValve1(){
     digitalWrite(RELAY_3_PIN, RELAY_OFF);
-    status.valve1 = flase;
+    status.valve1 = false;
 }
 
 void openValve2(){
@@ -257,7 +285,7 @@ void openValve2(){
 
 void closeValve2(){
     digitalWrite(RELAY_4_PIN, RELAY_OFF);
-    status.valve2 = flase;
+    status.valve2 = false;
 }
 
 /***** MQTT Handle *******/
@@ -284,7 +312,7 @@ bool mqttConnect(){
 }
 
 /***** WIFI Handle *****/
-bool wifiReconnect(){
+void wifiReconnect(){
     if((millis() - timeout.connection) > TIMEOUT_RECONNECT){
         timeout.connection = millis();
 
@@ -432,8 +460,7 @@ void lcdInit(){
 /***** LED Setting *****/
 void initLed(){
     pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, HIGH);      // default mati
-    status.led = false;
+    setLed(true);
 }
 
 void toggleLed(uint32_t timer){
