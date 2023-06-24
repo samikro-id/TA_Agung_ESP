@@ -72,8 +72,8 @@ typedef struct{
 }STATUS_TypeDef;
 STATUS_TypeDef status;
 
-#define LED_TIME_MQTT       500
-#define LED_TIME_CONNECTED  100
+#define LED_TIME_MQTT       100
+#define LED_TIME_CONNECTED  1000
 #define LED_TIME_DISCONNECT 2000
 
 #define TIMEOUT_RECONNECT   60000
@@ -100,6 +100,8 @@ typedef struct{
 }DATA_TypeDef;
 DATA_TypeDef data;
 
+uint8_t sensor_n = 0;
+
 void setup(){
     delay(500);
     Serial.begin(115200);
@@ -111,18 +113,13 @@ void setup(){
     lcd.setCursor(0,0);
     lcd.print("TA Agung 2023");
 
-    ads1.begin();
-    ads1.setDataRate(7);
+    ads1.begin();   ads1.setDataRate(7);
 
-    ads2.begin();
-    ads2.setDataRate(7);
+    ads2.begin();   ads2.setDataRate(7);
 
     status.connection = false;
-    status.led = false;
     status.mqtt = false;
-
-    offCharge();
-        
+    
     timeout.connection = millis() - TIMEOUT_RECONNECT;
     timeout.update = millis();
 
@@ -163,36 +160,40 @@ void loop(){
         Serial.println("=========== update ==============");
 
         data.flow = flowValue(elapsed_time);
-        data.i_bat = iBatt();
-        data.i_panel = iPanel();
-        data.turbidity1 = turbidity1();
-        data.turbidity2 = turbidity2();
-        data.v_bat = vBatt();
-        data.v_panel = vPanel();
         data.water_level = waterLevel();
 
         lcd.clear();
-        lcd.setCursor(0,0);
-        lcd.print("V Batt  : "); lcd.print(data.v_bat);
-        lcd.setCursor(0,1);
-        lcd.print("I Batt  : "); lcd.print(data.i_bat);
+        lcd.setCursor(0,0); lcd.printf("B:%0.2fV", data.v_bat); 
+        lcd.setCursor(10,0); lcd.printf("P:%0.2fV", data.v_panel);
 
-        lcd.setCursor(0,2);
-        lcd.print("V Panel : "); lcd.print(data.v_panel);
-        lcd.setCursor(0,3);
-        lcd.print("I Panel : "); lcd.print(data.i_panel);
+        lcd.setCursor(0,1); lcd.printf("B:%0.2fA", data.i_bat);
+        lcd.setCursor(10,1); lcd.printf("P:%0.2fA", data.i_panel);
+
+        lcd.setCursor(0,2); lcd.printf("Air: %0.0fNTU  %0.0fcm", data.turbidity1, data.water_level);
 
         Serial.print("Flow ");  Serial.println(data.flow);
         // Serial.print("I Bat ");  Serial.println(data.i_bat);
         // Serial.print("I Panel ");  Serial.println(data.i_panel);
-        Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
+        // Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
         Serial.print("Turbidity2 ");  Serial.println(data.turbidity2);
         // Serial.print("V Bat ");  Serial.println(data.v_bat);
         // Serial.print("V Panel ");  Serial.println(data.v_panel);
-        Serial.print("Level ");  Serial.println(data.water_level);
+        // Serial.print("Level ");  Serial.println(data.water_level);
         
         flowEnable();
         timeout.update = millis();
+    }
+    else{
+        sensor_n++;
+        switch(sensor_n){
+            case 1: data.turbidity1 = turbidity1(); break;
+            case 2: data.turbidity2 = turbidity2(); break;
+            case 3: data.v_bat = vBatt(); break;
+            case 4: data.i_bat = iBatt(); break;
+            case 5: data.v_panel = vPanel(); break;
+            case 6: data.i_panel = iPanel(); break;
+            default : sensor_n = 0; break;
+        }
     }
 }
 
@@ -227,7 +228,7 @@ void publishChart(){
             float field7=0;         // tegangan pv
             float field8=0;         // arus pv
 
-            sprintf(text,"field1=%d&field2=%d&field3=%.0f&field4=%.0f&field5=%.0f&field6=%.0f&field7=%.0ffield8=%.0f&status=MQTTPUBLISH", 
+            sprintf(text,"field1=%d&field2=%d&field3=%.0f&field4=%.0f&field5=%.2f&field6=%.3f&field7=%.2f&field8=%.3f&status=MQTTPUBLISH", 
                     status.valve1, status.valve2,
                     data.turbidity1, data.water_level, 
                     data.v_bat, data.i_bat,
@@ -391,6 +392,8 @@ float vPanel(){
     int16_t raw = ads2.readADC(2);
     float vPanel = raw * ads2.toVoltage(1) * GAIN_V_PANEL;
 
+    vPanel -= data.v_bat;
+
     if(vPanel < 0){   vPanel = 0;   }
 
     return vPanel;
@@ -399,8 +402,8 @@ float vPanel(){
 float iPanel(){
     ads1.setGain(16);    // GAIN 0.254
 
-    int16_t raw = ads1.readADC_Differential_1_3();
-    float iPanel = (raw * ads1.toVoltage(1)) / GAIN_I_PANEL;
+    int16_t raw = ads1.readADC_Differential_2_3();
+    float iPanel = -1 * (raw * ads1.toVoltage(1)) / GAIN_I_PANEL;
 
     return iPanel;
 }
@@ -443,9 +446,13 @@ float waterLevel(){
     delayMicroseconds(10);
     digitalWrite(JARAK_TRIG_PIN, LOW);
     // Reads the echoPin, returns the sound wave travel time in microseconds
-    unsigned long duration = pulseIn(JARAK_ECHO_PIN, HIGH);
+    unsigned long duration = pulseIn(JARAK_ECHO_PIN, HIGH, 500);
     // Calculating the distance
     float distance = duration * 0.034 / 2;
+
+    if(distance > JARAK_SENSOR_POSISI){
+        distance = 0;
+    }
 
     return (float) JARAK_SENSOR_POSISI - distance;
 }
