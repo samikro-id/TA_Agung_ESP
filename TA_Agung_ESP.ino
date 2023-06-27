@@ -29,7 +29,8 @@ PubSubClient client(espClient);
 #define CHANNEL_ID      2193286
 
 #define MQTT_LEN  100
-char mqtt_payload[MQTT_LEN];
+// char mqtt_payload[MQTT_LEN];
+String mqtt_payload;
 
 #define SERIAL_LEN   1000
 char text[SERIAL_LEN];
@@ -76,17 +77,21 @@ STATUS_TypeDef status;
 #define LED_TIME_CONNECTED  1000
 #define LED_TIME_DISCONNECT 2000
 
-#define TIMEOUT_RECONNECT   60000
-#define TIMEOUT_CHART       60000
-#define TIMEOUT_UPDATE      1000
+#define TIMEOUT_RECONNECT       60000
+#define TIMEOUT_CHART           60000
+#define TIMEOUT_UPDATE          1000
+#define TIMEOUT_UPDATE_CHARGE   60000
 typedef struct{
     uint32_t led;
     uint32_t connection;
     uint32_t chart;
     uint32_t update;
+    uint32_t update_charge;
 }TIMEOUT_TypeDef;
 TIMEOUT_TypeDef timeout;
 
+#define VOLT_PANEL_CHARGE       12.0
+#define VOLT_PANEL_DISCHARGE    10.0
 typedef struct{
     float turbidity1;
     float turbidity2;
@@ -103,7 +108,7 @@ DATA_TypeDef data;
 uint8_t sensor_n = 0;
 
 void setup(){
-    delay(500);
+    delay(3000);
     Serial.begin(115200);
 
     initLed();
@@ -114,7 +119,6 @@ void setup(){
     lcd.print("TA Agung 2023");
 
     ads1.begin();   ads1.setDataRate(7);
-
     ads2.begin();   ads2.setDataRate(7);
 
     status.connection = false;
@@ -124,6 +128,8 @@ void setup(){
     timeout.update = millis();
 
     Serial.println("Init");
+
+    delay(3000);
 }
 
 void loop(){
@@ -136,10 +142,9 @@ void loop(){
             status.connection = client.loop();
 
             if(status.mqtt){
+                processData();
+                
                 status.mqtt = false;
-
-                Serial.println(mqtt_payload);
-                clearDataMqtt();
             }
 
             publishChart();
@@ -190,11 +195,70 @@ void loop(){
             case 2: data.turbidity2 = turbidity2(); break;
             case 3: data.v_bat = vBatt(); break;
             case 4: data.i_bat = iBatt(); break;
-            case 5: data.v_panel = vPanel(); break;
+            case 5: 
+                /* Charge Control */
+                if(status.charge && data.v_panel < VOLT_PANEL_DISCHARGE){
+                        offCharge();
+                }   
+                else{
+                    data.v_panel = vPanel(); 
+                    if(data.v_panel > VOLT_PANEL_CHARGE){
+                        onCharge();
+                    }
+                }
+                break;
             case 6: data.i_panel = iPanel(); break;
-            default : sensor_n = 0; break;
+            default : 
+                sensor_n = 0;
+
+                if(data.flow > 10){
+
+                }
+                break;
+        }
+
+        /* Charge Control */
+        if( status.charge &&
+            (millis() - timeout.update_charge) > TIMEOUT_UPDATE_CHARGE
+        ){
+            timeout.update_charge = millis();
+
+            offCharge();
+            delay(200);
+            data.v_panel = vPanel(); 
+            onCharge();
         }
     }
+}
+
+void processData(){
+    Serial.println(mqtt_payload);
+
+    int index, index2, index3;
+
+    index = mqtt_payload.indexOf("|");
+
+    if(mqtt_payload.substring(0, index) == "GET"){
+        index++;
+        if(mqtt_payload.substring(index) == "DATA"){
+            // sendData();
+        }
+    }
+    else if(mqtt_payload.substring(0, index) == "SET"){
+        index++;
+        index2 = mqtt_payload.indexOf("|", index);
+        if(mqtt_payload.substring(index, index2) == "PARAM"){
+        
+        }
+    }
+
+    clearDataMqtt();
+}
+
+void publishData(){
+    sprintf(text, "DATA|");
+
+    mqttPublish(text);
 }
 
 void publishChart(){
@@ -256,10 +320,14 @@ void relayInit(){
 }
 
 void onCharge(){
+    if(status.charge == false){
+        timeout.update_charge = millis();
+    }
+
     digitalWrite(RELAY_2_PIN, RELAY_OFF);
     delay(10);
     digitalWrite(RELAY_1_PIN, RELAY_OFF);
-    status.charge = false;
+    status.charge = true;
 }
 
 void offCharge(){
@@ -291,8 +359,12 @@ void closeValve2(){
 
 /***** MQTT Handle *******/
 void callback(char* topic, byte* payload, unsigned int length) { //A new message has been received
-    memcpy(mqtt_payload, payload, length);
-    status.mqtt = true;
+    if(status.mqtt == false){
+        // memcpy(mqtt_payload, payload, length);
+        mqtt_payload = String((char *) payload);
+
+        status.mqtt = true;
+    }
 }
 
 bool mqttConnect(){
@@ -310,6 +382,10 @@ bool mqttConnect(){
     }
 
     return false;
+}
+
+void mqttPublish(char *payload){
+    client.publish("samikro/data/project/6",payload,false);
 }
 
 /***** WIFI Handle *****/
@@ -491,10 +567,12 @@ void setLed(bool state){
 
 /***** Tambahan *******/
 void clearDataMqtt(){
-    uint8_t n;
-    for(n=0; n<MQTT_LEN; n++){
-        mqtt_payload[n] = 0;
-    }
+    // uint8_t n;
+    // for(n=0; n<MQTT_LEN; n++){
+    //     mqtt_payload[n] = 0;
+    // }
+
+    mqtt_payload = "";
 }
 
 int findChar(char * data, char character, int start_index){
