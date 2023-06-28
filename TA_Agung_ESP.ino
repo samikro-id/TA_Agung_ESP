@@ -81,12 +81,15 @@ STATUS_TypeDef status;
 #define TIMEOUT_CHART           60000
 #define TIMEOUT_UPDATE          1000
 #define TIMEOUT_UPDATE_CHARGE   60000
+#define TIMEOUT_DISPLAY_PAGE1   5000
+#define TIMEOUT_DISPLYA_PAGE2   10000
 typedef struct{
     uint32_t led;
     uint32_t connection;
     uint32_t chart;
     uint32_t update;
     uint32_t update_charge;
+    uint32_t display;
 }TIMEOUT_TypeDef;
 TIMEOUT_TypeDef timeout;
 
@@ -126,6 +129,7 @@ void setup(){
     
     timeout.connection = millis() - TIMEOUT_RECONNECT;
     timeout.update = millis();
+    timeout.display = millis();
 
     Serial.println("Init");
 
@@ -168,11 +172,34 @@ void loop(){
         data.water_level = waterLevel();
 
         lcd.clear();
-        lcd.setCursor(0,0); lcd.printf("B:%0.2fV", data.v_bat); 
-        lcd.setCursor(10,0); lcd.printf("P:%0.2fV", data.v_panel);
 
-        lcd.setCursor(0,1); lcd.printf("B:%0.2fA", data.i_bat);
-        lcd.setCursor(10,1); lcd.printf("P:%0.2fA", data.i_panel);
+        if((millis() - timeout.display) < TIMEOUT_DISPLAY_PAGE1){
+            lcd.setCursor(0,0); lcd.print("-----ELEKTRIKAL-----");
+            lcd.setCursor(0,1); lcd.print(" BATERAI   SOLAR P  ");
+            lcd.setCursor(0,2); lcd.print("        V         V ");
+            lcd.setCursor(0,2); lcd.print("        A         A ");
+
+            lcd.setCursor(0,1); lcd.printf("%0.2f", data.v_bat);
+            lcd.setCursor(10,1); lcd.printf("%0.2f", data.v_panel);
+
+            lcd.setCursor(0,2); lcd.printf("%0.2f", data.i_bat);
+            lcd.setCursor(10,2); lcd.printf("%0.2f", data.i_panel);
+        }
+        else if((millis() - timeout.display) < TIMEOUT_DISPLAY_PAGE2){
+            lcd.setCursor(0,0); lcd.print("--------AIR---------");
+            lcd.setCursor(0,1); lcd.print("T1:      T2:       ");
+            lcd.setCursor(0,2); lcd.print("        V         V ");
+            lcd.setCursor(0,2); lcd.print("        A         A ");
+
+            lcd.setCursor(0,1); lcd.printf("%0.2f", data.v_bat);
+            lcd.setCursor(10,1); lcd.printf("%0.2f", data.v_panel);
+
+            lcd.setCursor(0,2); lcd.printf("%0.2f", data.i_bat);
+            lcd.setCursor(10,2); lcd.printf("%0.2f", data.i_panel);
+        }
+        else{
+            timeout.display = millis();
+        }
 
         lcd.setCursor(0,2); lcd.printf("Air: %0.0fNTU  %0.0fcm", data.turbidity1, data.water_level);
 
