@@ -90,8 +90,8 @@ typedef struct{
 }TIMEOUT_TypeDef;
 TIMEOUT_TypeDef timeout;
 
-#define VOLT_PANEL_CHARGE       12.0
-#define VOLT_PANEL_DISCHARGE    10.0
+#define VOLT_PANEL_CHARGE       10.0
+#define VOLT_PANEL_DISCHARGE    8.0
 typedef struct{
     float turbidity1;
     float turbidity2;
@@ -180,7 +180,7 @@ void loop(){
         // Serial.print("I Bat ");  Serial.println(data.i_bat);
         // Serial.print("I Panel ");  Serial.println(data.i_panel);
         // Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
-        Serial.print("Turbidity2 ");  Serial.println(data.turbidity2);
+        Serial.print("Turbidity2 ");  Serial.println(data.turbidity2, 0);
         // Serial.print("V Bat ");  Serial.println(data.v_bat);
         // Serial.print("V Panel ");  Serial.println(data.v_panel);
         // Serial.print("Level ");  Serial.println(data.water_level);
@@ -197,8 +197,19 @@ void loop(){
             case 4: data.i_bat = iBatt(); break;
             case 5: 
                 /* Charge Control */
-                if(status.charge && data.v_panel < VOLT_PANEL_DISCHARGE){
+                if(status.charge){
+                    if((millis() - timeout.update_charge) > TIMEOUT_UPDATE_CHARGE){
+                        timeout.update_charge = millis();
+
+                        Serial.println("Panel Charge");
                         offCharge();
+                        delay(200);
+                        // data.v_panel = vPanel(); 
+                    }
+
+                    if(data.v_panel < VOLT_PANEL_DISCHARGE){
+                        offCharge();
+                    }
                 }   
                 else{
                     data.v_panel = vPanel(); 
@@ -215,18 +226,6 @@ void loop(){
 
                 }
                 break;
-        }
-
-        /* Charge Control */
-        if( status.charge &&
-            (millis() - timeout.update_charge) > TIMEOUT_UPDATE_CHARGE
-        ){
-            timeout.update_charge = millis();
-
-            offCharge();
-            delay(200);
-            data.v_panel = vPanel(); 
-            onCharge();
         }
     }
 }
@@ -361,7 +360,10 @@ void closeValve2(){
 void callback(char* topic, byte* payload, unsigned int length) { //A new message has been received
     if(status.mqtt == false){
         // memcpy(mqtt_payload, payload, length);
-        mqtt_payload = String((char *) payload);
+
+        for(uint16_t i=0; i < length; i++){
+            mqtt_payload += (char) payload[i];
+        }
 
         status.mqtt = true;
     }
@@ -369,6 +371,9 @@ void callback(char* topic, byte* payload, unsigned int length) { //A new message
 
 bool mqttConnect(){
     Serial.println("mqtt");
+
+    clearDataMqtt();
+    status.mqtt = false;
 
     client.disconnect();
     client.setServer(MQTT_BROKER, MQTT_PORT);
@@ -418,6 +423,8 @@ float turbidityNtu(float volt){
 float turbidity1(){
     ads2.setGain(2);     // GAIN 2.048
 
+    // Serial.print("Turbidity 1 ");
+
     int16_t raw = ads2.readADC(0);
     float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
 
@@ -425,11 +432,14 @@ float turbidity1(){
 
     float ntu = turbidityNtu(vTurbidity);
 
+    // Serial.println("end");
     return ntu;
 }
 
 float turbidity2(){
     ads2.setGain(2);     // GAIN 2.048
+
+    // Serial.print("Turbidity 2 ");
 
     int16_t raw = ads2.readADC(1);
     float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
@@ -438,6 +448,7 @@ float turbidity2(){
 
     float ntu = turbidityNtu(vTurbidity);
 
+    // Serial.println("end");
     return ntu;
 }
 
