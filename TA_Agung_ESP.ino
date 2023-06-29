@@ -80,9 +80,9 @@ STATUS_TypeDef status;
 #define TIMEOUT_RECONNECT       60000
 #define TIMEOUT_CHART           60000
 #define TIMEOUT_UPDATE          1000
-#define TIMEOUT_UPDATE_CHARGE   60000
+#define TIMEOUT_UPDATE_CHARGE   180000
 #define TIMEOUT_DISPLAY_PAGE1   5000
-#define TIMEOUT_DISPLYA_PAGE2   10000
+#define TIMEOUT_DISPLAY_PAGE2   10000
 typedef struct{
     uint32_t led;
     uint32_t connection;
@@ -172,42 +172,45 @@ void loop(){
         data.water_level = waterLevel();
 
         lcd.clear();
-
         if((millis() - timeout.display) < TIMEOUT_DISPLAY_PAGE1){
             lcd.setCursor(0,0); lcd.print("-----ELEKTRIKAL-----");
             lcd.setCursor(0,1); lcd.print(" BATERAI   SOLAR P  ");
             lcd.setCursor(0,2); lcd.print("        V         V ");
-            lcd.setCursor(0,2); lcd.print("        A         A ");
+            lcd.setCursor(0,3); lcd.print("        A         A ");
 
-            lcd.setCursor(0,1); lcd.printf("%0.2f", data.v_bat);
-            lcd.setCursor(10,1); lcd.printf("%0.2f", data.v_panel);
+            lcd.setCursor(1,2); lcd.printf("%0.2f", data.v_bat);
+            lcd.setCursor(11,2); lcd.printf("%0.2f", data.v_panel);
 
-            lcd.setCursor(0,2); lcd.printf("%0.2f", data.i_bat);
-            lcd.setCursor(10,2); lcd.printf("%0.2f", data.i_panel);
+            lcd.setCursor(1,3); lcd.printf("%0.2f", data.i_bat);
+            lcd.setCursor(11,3); lcd.printf("%0.2f", data.i_panel);
         }
-        else if((millis() - timeout.display) < TIMEOUT_DISPLAY_PAGE2){
+        else {
             lcd.setCursor(0,0); lcd.print("--------AIR---------");
-            lcd.setCursor(0,1); lcd.print("T1:      T2:       ");
-            lcd.setCursor(0,2); lcd.print("        V         V ");
-            lcd.setCursor(0,2); lcd.print("        A         A ");
+            lcd.setCursor(0,1); lcd.print("SAMPLE:      NTU");
+            lcd.setCursor(0,2); lcd.print("FILTER:      NTU");
+            lcd.setCursor(0,3); lcd.print("LEVEL:    cm  Flow: ");
 
-            lcd.setCursor(0,1); lcd.printf("%0.2f", data.v_bat);
-            lcd.setCursor(10,1); lcd.printf("%0.2f", data.v_panel);
+            lcd.setCursor(8,1); lcd.printf("%0.0f", data.turbidity1);
+            lcd.setCursor(8,2); lcd.printf("%0.0f", data.turbidity2);
 
-            lcd.setCursor(0,2); lcd.printf("%0.2f", data.i_bat);
-            lcd.setCursor(10,2); lcd.printf("%0.2f", data.i_panel);
+            lcd.setCursor(7,3); lcd.printf("%0.0f", data.water_level);
+            lcd.setCursor(19,3);
+            if(data.flow > 0){
+                lcd.print("1");
+            }else{
+                lcd.print("0");
+            }
+
+            if((millis() - timeout.display) > TIMEOUT_DISPLAY_PAGE2){
+                timeout.display = millis();
+            }
         }
-        else{
-            timeout.display = millis();
-        }
 
-        lcd.setCursor(0,2); lcd.printf("Air: %0.0fNTU  %0.0fcm", data.turbidity1, data.water_level);
-
-        Serial.print("Flow ");  Serial.println(data.flow);
+        // Serial.print("Flow ");  Serial.println(data.flow);
         // Serial.print("I Bat ");  Serial.println(data.i_bat);
         // Serial.print("I Panel ");  Serial.println(data.i_panel);
         // Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
-        Serial.print("Turbidity2 ");  Serial.println(data.turbidity2, 0);
+        // Serial.print("Turbidity2 ");  Serial.println(data.turbidity2, 0);
         // Serial.print("V Bat ");  Serial.println(data.v_bat);
         // Serial.print("V Panel ");  Serial.println(data.v_panel);
         // Serial.print("Level ");  Serial.println(data.water_level);
@@ -450,7 +453,7 @@ float turbidityNtu(float volt){
 float turbidity1(){
     ads2.setGain(2);     // GAIN 2.048
 
-    // Serial.print("Turbidity 1 ");
+    Serial.print("Turbidity 1 ");
 
     int16_t raw = ads2.readADC(0);
     float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
@@ -459,14 +462,14 @@ float turbidity1(){
 
     float ntu = turbidityNtu(vTurbidity);
 
-    // Serial.println("end");
+    Serial.println("end");
     return ntu;
 }
 
 float turbidity2(){
     ads2.setGain(2);     // GAIN 2.048
 
-    // Serial.print("Turbidity 2 ");
+    Serial.print("Turbidity 2 ");
 
     int16_t raw = ads2.readADC(1);
     float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
@@ -475,7 +478,7 @@ float turbidity2(){
 
     float ntu = turbidityNtu(vTurbidity);
 
-    // Serial.println("end");
+    Serial.println("end");
     return ntu;
 }
 
@@ -483,25 +486,33 @@ float turbidity2(){
 float vBatt(){
     ads1.setGain(2);     // GAIN 2.048
 
+    Serial.print("VBatt ");
+
     int16_t raw = ads1.readADC(0);
     float vBat = raw * ads1.toVoltage(1) * GAIN_V_BAT;
 
     if(vBat < 0){   vBat = 0;   }
 
+    Serial.println("end");
     return vBat;
 }
 
 float iBatt(){
     ads1.setGain(16);    // GAIN 0.254
 
+    Serial.print("IBatt ");
+
     int16_t raw = ads1.readADC_Differential_1_3();
     float iLoad = (raw * ads1.toVoltage(1)) / GAIN_I_BATT;
 
+    Serial.println("end");
     return iLoad;
 }
 
 float vPanel(){
     ads2.setGain(2);     // GAIN 2.048
+
+    Serial.print("VPanel ");
 
     int16_t raw = ads2.readADC(2);
     float vPanel = raw * ads2.toVoltage(1) * GAIN_V_PANEL;
@@ -510,15 +521,19 @@ float vPanel(){
 
     if(vPanel < 0){   vPanel = 0;   }
 
+    Serial.println("end");
     return vPanel;
 }
 
 float iPanel(){
     ads1.setGain(16);    // GAIN 0.254
 
+    Serial.print("IPanel ");
+
     int16_t raw = ads1.readADC_Differential_2_3();
     float iPanel = -1 * (raw * ads1.toVoltage(1)) / GAIN_I_PANEL;
 
+    Serial.println("end");
     return iPanel;
 }
 
