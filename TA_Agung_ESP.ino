@@ -70,6 +70,7 @@ typedef struct{
     bool charge;
     bool valve1;
     bool valve2;
+    bool via_filter;
 }STATUS_TypeDef;
 STATUS_TypeDef status;
 
@@ -126,6 +127,7 @@ void setup(){
 
     status.connection = false;
     status.mqtt = false;
+    status.via_filter = false;
     
     timeout.connection = millis() - TIMEOUT_RECONNECT;
     timeout.update = millis();
@@ -145,12 +147,7 @@ void loop(){
         if(status.connection){
             status.connection = client.loop();
 
-            if(status.mqtt){
-                processData();
-                
-                status.mqtt = false;
-            }
-
+            processData();
             publishChart();
         }
         else{
@@ -195,11 +192,8 @@ void loop(){
 
             lcd.setCursor(7,3); lcd.printf("%0.0f", data.water_level);
             lcd.setCursor(19,3);
-            if(data.flow > 0){
-                lcd.print("1");
-            }else{
-                lcd.print("0");
-            }
+            if(data.flow > 0){  lcd.print("1"); }
+            else{               lcd.print("0"); }
 
             if((millis() - timeout.display) > TIMEOUT_DISPLAY_PAGE2){
                 timeout.display = millis();
@@ -234,7 +228,6 @@ void loop(){
                         Serial.println("Panel Charge");
                         offCharge();
                         delay(200);
-                        // data.v_panel = vPanel(); 
                     }
 
                     if(data.v_panel < VOLT_PANEL_DISCHARGE){
@@ -249,43 +242,38 @@ void loop(){
                 }
                 break;
             case 6: data.i_panel = iPanel(); break;
-            default : 
-                sensor_n = 0;
-
-                if(data.flow > 10){
-
-                }
-                break;
+            default : sensor_n = 0; break;
         }
+    }
+
+    if(data.flow > 0){
+
     }
 }
 
 void processData(){
-    Serial.println(mqtt_payload);
+    if(status.mqtt){
+        Serial.println(mqtt_payload);
 
-    int index, index2, index3;
+        int index = mqtt_payload.indexOf("|");
 
-    index = mqtt_payload.indexOf("|");
-
-    if(mqtt_payload.substring(0, index) == "GET"){
-        index++;
-        if(mqtt_payload.substring(index) == "DATA"){
-            // sendData();
+        if(mqtt_payload.substring(0, index) == "GET"){
+            index++;
+            if(mqtt_payload.substring(index) == "DATA"){
+                publishData();
+            }
         }
-    }
-    else if(mqtt_payload.substring(0, index) == "SET"){
-        index++;
-        index2 = mqtt_payload.indexOf("|", index);
-        if(mqtt_payload.substring(index, index2) == "PARAM"){
+
+        clearDataMqtt();
         
-        }
+        status.mqtt = false;
     }
-
-    clearDataMqtt();
 }
 
 void publishData(){
-    sprintf(text, "DATA|");
+    /* DATA|valve1|valve2|turbidity1|turbidity2|level|flow|vbat|ibat|vpanel|ipanel*/
+    sprintf(text, "DATA|%d|%d|%0.0f|%0.0f|%0.0f|%0.0f|%0.2f|%0.2f|%0.2f|%0.2f", 
+                status.valve1, status.valve2, data.turbidity1, data.turbidity2, data.water_level, data.flow, data.v_bat, data.i_bat, data.v_panel, data.i_panel);
 
     mqttPublish(text);
 }
@@ -295,43 +283,27 @@ void publishChart(){
         timeout.chart = millis();
         status.connection = false;
 
-        bool chartIsConnected = false;
-        uint8_t n = 0;
-
         Serial.println("chart");
         
         client.disconnect();
         client.setServer(MQTT2_BROKER, MQTT2_PORT);
 
-        for(n=0; n<MQTT2_TIMEOUT; n++){
+        for(uint8_t n=0; n<MQTT2_TIMEOUT; n++){
             if(client.connect(SECRET_MQTT_CLIENT_ID, SECRET_MQTT_USERNAME, SECRET_MQTT_PASSWORD)){
-                chartIsConnected = true;
+
+                sprintf(text,"field1=%d&field2=%d&field3=%.0f&field4=%.0f&field5=%.2f&field6=%.3f&field7=%.2f&field8=%.3f&status=MQTTPUBLISH", 
+                        status.valve1, status.valve2,
+                        data.turbidity1, data.water_level, 
+                        data.v_bat, data.i_bat,
+                        data.v_panel, data.i_panel);
+
+                char topic[50];
+                memset(&topic, 0, 50);
+                sprintf(topic,"channels/%d/publish", CHANNEL_ID);
+                client.publish(topic,text,false);
 
                 break;
             }
-        }
-
-        if(chartIsConnected){
-            float field1=0;         // valve1
-            float field2=0;         // valve2
-            float field3=0;         // kejernihan
-            float field4=0;         // ketinggihan
-            float field5=0;         // tegangan baterai
-            float field6=0;         // arus baterai
-            float field7=0;         // tegangan pv
-            float field8=0;         // arus pv
-
-            sprintf(text,"field1=%d&field2=%d&field3=%.0f&field4=%.0f&field5=%.2f&field6=%.3f&field7=%.2f&field8=%.3f&status=MQTTPUBLISH", 
-                    status.valve1, status.valve2,
-                    data.turbidity1, data.water_level, 
-                    data.v_bat, data.i_bat,
-                    data.v_panel, data.i_panel);
-
-            char topic[50];
-            memset(&topic, 0, 50);
-            sprintf(topic,"channels/%d/publish", CHANNEL_ID);
-            client.publish(topic,text,false);
-
         }
     }
 }
@@ -389,8 +361,6 @@ void closeValve2(){
 /***** MQTT Handle *******/
 void callback(char* topic, byte* payload, unsigned int length) { //A new message has been received
     if(status.mqtt == false){
-        // memcpy(mqtt_payload, payload, length);
-
         for(uint16_t i=0; i < length; i++){
             mqtt_payload += (char) payload[i];
         }
@@ -620,11 +590,6 @@ void setLed(bool state){
 
 /***** Tambahan *******/
 void clearDataMqtt(){
-    // uint8_t n;
-    // for(n=0; n<MQTT_LEN; n++){
-    //     mqtt_payload[n] = 0;
-    // }
-
     mqtt_payload = "";
 }
 
