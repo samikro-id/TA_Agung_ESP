@@ -29,7 +29,6 @@ PubSubClient client(espClient);
 #define CHANNEL_ID      2193286
 
 #define MQTT_LEN  100
-// char mqtt_payload[MQTT_LEN];
 String mqtt_payload;
 
 #define SERIAL_LEN   1000
@@ -47,10 +46,12 @@ float calibrationFactor = 4.5;
 #define RELAY_2_PIN         18
 #define RELAY_3_PIN         5
 #define RELAY_4_PIN         17
+#define RELAY_5_PIN         25
+#define RELAY_6_PIN         26
 
 #define JARAK_TRIG_PIN      32
 #define JARAK_ECHO_PIN      33
-#define JARAK_SENSOR_POSISI 30
+#define JARAK_SENSOR_POSISI 8.5
 
 #define GAIN_TURBIDITY      2.5
 #define GAIN_V_BAT          11
@@ -70,6 +71,8 @@ typedef struct{
     bool charge;
     bool valve1;
     bool valve2;
+    bool valve3;
+    bool valve4;
     bool via_filter;
 }STATUS_TypeDef;
 STATUS_TypeDef status;
@@ -84,12 +87,14 @@ STATUS_TypeDef status;
 #define TIMEOUT_UPDATE_CHARGE   180000
 #define TIMEOUT_DISPLAY_PAGE1   5000
 #define TIMEOUT_DISPLAY_PAGE2   10000
+#define TIMEOUT_SENSOR          100
 typedef struct{
     uint32_t led;
     uint32_t connection;
     uint32_t chart;
     uint32_t update;
     uint32_t update_charge;
+    uint32_t update_sensor;
     uint32_t display;
 }TIMEOUT_TypeDef;
 TIMEOUT_TypeDef timeout;
@@ -117,13 +122,11 @@ void setup(){
 
     initLed();
     flowInit();
+    levelInit();
     relayInit();
     lcdInit();
     lcd.setCursor(0,0);
     lcd.print("TA Agung 2023");
-
-    ads1.begin();   ads1.setDataRate(7);
-    ads2.begin();   ads2.setDataRate(7);
 
     status.connection = false;
     status.mqtt = false;
@@ -136,6 +139,9 @@ void setup(){
     Serial.println("Init");
 
     delay(3000);
+
+    // openValve1();
+    // openValve3();
 }
 
 void loop(){
@@ -213,36 +219,44 @@ void loop(){
         timeout.update = millis();
     }
     else{
-        sensor_n++;
-        switch(sensor_n){
-            case 1: data.turbidity1 = turbidity1(); break;
-            case 2: data.turbidity2 = turbidity2(); break;
-            case 3: data.v_bat = vBatt(); break;
-            case 4: data.i_bat = iBatt(); break;
-            case 5: 
-                /* Charge Control */
-                if(status.charge){
-                    if((millis() - timeout.update_charge) > TIMEOUT_UPDATE_CHARGE){
-                        timeout.update_charge = millis();
+        if((millis() - timeout.update_sensor) > TIMEOUT_SENSOR){
 
-                        Serial.println("Panel Charge");
-                        offCharge();
-                        delay(200);
-                    }
+            ads1.begin(21,22);   ads1.setDataRate(7);
+            ads2.begin(21,22);   ads2.setDataRate(7);
 
-                    if(data.v_panel < VOLT_PANEL_DISCHARGE){
-                        offCharge();
+            sensor_n++;
+            switch(sensor_n){
+                case 1: data.turbidity1 = turbidity1(); break;
+                case 2: data.turbidity2 = turbidity2(); break;
+                case 3: data.v_bat = vBatt(); break;
+                case 4: data.i_bat = iBatt(); break;
+                case 6: 
+                    /* Charge Control */
+                    if(status.charge){
+                        if((millis() - timeout.update_charge) > TIMEOUT_UPDATE_CHARGE){
+                            timeout.update_charge = millis();
+
+                            Serial.println("Panel Charge");
+                            offCharge();
+                            delay(200);
+                        }
+
+                        if(data.v_panel < VOLT_PANEL_DISCHARGE){
+                            offCharge();
+                        }
+                    }   
+                    else{
+                        data.v_panel = vPanel(); 
+                        if(data.v_panel > VOLT_PANEL_CHARGE){
+                            onCharge();
+                        }
                     }
-                }   
-                else{
-                    data.v_panel = vPanel(); 
-                    if(data.v_panel > VOLT_PANEL_CHARGE){
-                        onCharge();
-                    }
-                }
-                break;
-            case 6: data.i_panel = iPanel(); break;
-            default : sensor_n = 0; break;
+                    break;
+                case 5: data.i_panel = iPanel(); break;
+                default : sensor_n = 0; break;
+            }
+
+            timeout.update_sensor = millis();
         }
     }
 
@@ -314,10 +328,14 @@ void relayInit(){
     pinMode(RELAY_2_PIN, OUTPUT);
     pinMode(RELAY_3_PIN, OUTPUT);
     pinMode(RELAY_4_PIN, OUTPUT);
+    pinMode(RELAY_5_PIN, OUTPUT);
+    pinMode(RELAY_6_PIN, OUTPUT);
 
     offCharge();
     closeValve1();
     closeValve2();
+    closeValve3();
+    closeValve4();
 }
 
 void onCharge(){
@@ -326,25 +344,25 @@ void onCharge(){
     }
 
     digitalWrite(RELAY_2_PIN, RELAY_OFF);
-    delay(10);
-    digitalWrite(RELAY_1_PIN, RELAY_OFF);
+    delay(200);
+    digitalWrite(RELAY_3_PIN, RELAY_OFF);
     status.charge = true;
 }
 
 void offCharge(){
-    digitalWrite(RELAY_1_PIN, RELAY_ON);
-    delay(10);
+    digitalWrite(RELAY_3_PIN, RELAY_ON);
+    delay(200);
     digitalWrite(RELAY_2_PIN, RELAY_ON);
     status.charge = false;
 }
 
 void openValve1(){
-    digitalWrite(RELAY_3_PIN, RELAY_ON);
+    digitalWrite(RELAY_1_PIN, RELAY_ON);
     status.valve1 = true;
 }
 
 void closeValve1(){
-    digitalWrite(RELAY_3_PIN, RELAY_OFF);
+    digitalWrite(RELAY_1_PIN, RELAY_OFF);
     status.valve1 = false;
 }
 
@@ -356,6 +374,26 @@ void openValve2(){
 void closeValve2(){
     digitalWrite(RELAY_4_PIN, RELAY_OFF);
     status.valve2 = false;
+}
+
+void openValve3(){
+    digitalWrite(RELAY_5_PIN, RELAY_ON);
+    status.valve3 = true;
+}
+
+void closeValve3(){
+    digitalWrite(RELAY_5_PIN, RELAY_OFF);
+    status.valve3 = false;
+}
+
+void openValve4(){
+    digitalWrite(RELAY_6_PIN, RELAY_ON);
+    status.valve4 = true;
+}
+
+void closeValve4(){
+    digitalWrite(RELAY_6_PIN, RELAY_OFF);
+    status.valve4 = false;
 }
 
 /***** MQTT Handle *******/
@@ -421,89 +459,136 @@ float turbidityNtu(float volt){
 }
 
 float turbidity1(){
-    ads2.setGain(2);     // GAIN 2.048
-
     Serial.print("Turbidity 1 ");
 
-    int16_t raw = ads2.readADC(0);
-    float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
+    float ntu = 0.0;
 
-    if(vTurbidity < 0){   vTurbidity = 0;   }
+    if(ads2.isConnected()){
+        ads2.setGain(2);     // GAIN 2.048
 
-    float ntu = turbidityNtu(vTurbidity);
+        int16_t raw = ads2.readADC(0);
+        float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
 
-    Serial.println("end");
+        if(vTurbidity < 0){   vTurbidity = 0;   }
+
+        ntu = turbidityNtu(vTurbidity);
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
+
     return ntu;
 }
 
 float turbidity2(){
-    ads2.setGain(2);     // GAIN 2.048
-
     Serial.print("Turbidity 2 ");
 
-    int16_t raw = ads2.readADC(1);
-    float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
+    float ntu = 0.0;
 
-    if(vTurbidity < 0){   vTurbidity = 0;   }
+    if(ads2.isConnected()){
+        ads2.setGain(2);     // GAIN 2.048
 
-    float ntu = turbidityNtu(vTurbidity);
+        int16_t raw = ads2.readADC(1);
+        float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
 
-    Serial.println("end");
+        if(vTurbidity < 0){   vTurbidity = 0;   }
+
+        ntu = turbidityNtu(vTurbidity) - 100;
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
     return ntu;
 }
 
 /***** Voltage And Current Setting ****/
 float vBatt(){
-    ads1.setGain(2);     // GAIN 2.048
-
     Serial.print("VBatt ");
+    float vBat = 0.0;
 
-    int16_t raw = ads1.readADC(0);
-    float vBat = raw * ads1.toVoltage(1) * GAIN_V_BAT;
+    if(ads1.isConnected()){
+        ads1.setGain(2);     // GAIN 2.048
 
-    if(vBat < 0){   vBat = 0;   }
+        int16_t raw = ads1.readADC(0);
+        vBat = raw * ads1.toVoltage(1) * GAIN_V_BAT;
 
-    Serial.println("end");
+        if(vBat < 0){   vBat = 0;   }
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
     return vBat;
 }
 
 float iBatt(){
-    ads1.setGain(16);    // GAIN 0.254
-
     Serial.print("IBatt ");
+    float iLoad = 0.0;
 
-    int16_t raw = ads1.readADC_Differential_1_3();
-    float iLoad = (raw * ads1.toVoltage(1)) / GAIN_I_BATT;
+    if(ads1.isConnected()){
+        ads1.setGain(16);    // GAIN 0.254
 
-    Serial.println("end");
+        int16_t raw = ads1.readADC_Differential_1_3();
+        iLoad = (raw * ads1.toVoltage(1)) / GAIN_I_BATT;
+
+        if(-0.01 < iLoad && iLoad < 0.01){
+            iLoad = 0.0;
+        }
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
     return iLoad;
 }
 
 float vPanel(){
-    ads2.setGain(2);     // GAIN 2.048
-
     Serial.print("VPanel ");
+    float vPanel = 0.0;
 
-    int16_t raw = ads2.readADC(2);
-    float vPanel = raw * ads2.toVoltage(1) * GAIN_V_PANEL;
+    if(ads2.isConnected()){
+        ads2.setGain(2);     // GAIN 2.048
 
-    vPanel -= data.v_bat;
+        int16_t raw = ads2.readADC(2);
+        vPanel = raw * ads2.toVoltage(1) * GAIN_V_PANEL;
 
-    if(vPanel < 0){   vPanel = 0;   }
+        vPanel -= data.v_bat;
 
-    Serial.println("end");
+        if(vPanel < 0){   vPanel = 0;   }
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
     return vPanel;
 }
 
 float iPanel(){
-    ads1.setGain(16);    // GAIN 0.254
-
     Serial.print("IPanel ");
+    float iPanel = 0.0;
 
-    int16_t raw = ads1.readADC_Differential_2_3();
-    float iPanel = -1 * (raw * ads1.toVoltage(1)) / GAIN_I_PANEL;
+    if(ads1.isConnected()){
+        ads1.setGain(16);    // GAIN 0.254
 
-    Serial.println("end");
+        int16_t raw = ads1.readADC_Differential_2_3();
+        iPanel = -1 * (raw * ads1.toVoltage(1)) / GAIN_I_PANEL;
+
+        if(-0.01 < iPanel && iPanel < 0.01){
+            iPanel = 0.0;
+        }
+
+        Serial.println("end");
+    }
+    else{
+        Serial.println("Not Connect");
+    }
     return iPanel;
 }
 
@@ -536,6 +621,11 @@ float flowValue(uint32_t elapsed_time){
 }
 
 /***** PING Setting *****/
+void levelInit(){
+    pinMode(JARAK_TRIG_PIN, OUTPUT);
+    pinMode(JARAK_ECHO_PIN, INPUT);
+}
+
 float waterLevel(){
     // Clears the trigPin
     digitalWrite(JARAK_TRIG_PIN, LOW);
@@ -545,15 +635,21 @@ float waterLevel(){
     delayMicroseconds(10);
     digitalWrite(JARAK_TRIG_PIN, LOW);
     // Reads the echoPin, returns the sound wave travel time in microseconds
-    unsigned long duration = pulseIn(JARAK_ECHO_PIN, HIGH, 500);
+    unsigned long duration = pulseIn(JARAK_ECHO_PIN, HIGH);
     // Calculating the distance
-    float distance = duration * 0.034 / 2;
+    float distance = duration * 0.017;
 
+    float level;
     if(distance > JARAK_SENSOR_POSISI){
-        distance = 0;
+        level = 0;
+    }
+    else{
+        level = JARAK_SENSOR_POSISI - distance;
     }
 
-    return (float) JARAK_SENSOR_POSISI - distance;
+    Serial.print("Jarak "); Serial.println(level);
+    Serial.println(duration);
+    return level;
 }
 
 /***** LCD Setting *****/
