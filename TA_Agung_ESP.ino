@@ -5,8 +5,8 @@
 
 #include "mqtt_secrets.h"
 
-char nama_wifi[] = "RND_Wifi";
-char password_wifi[] = "RND12345";
+char nama_wifi[] = "Monggo nunut";
+char password_wifi[] = "fan071196";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -205,18 +205,27 @@ void loop(){
                 timeout.display = millis();
             }
         }
-
-        // Serial.print("Flow ");  Serial.println(data.flow);
-        // Serial.print("I Bat ");  Serial.println(data.i_bat);
-        // Serial.print("I Panel ");  Serial.println(data.i_panel);
-        // Serial.print("Turbidity1 ");  Serial.println(data.turbidity1);
-        // Serial.print("Turbidity2 ");  Serial.println(data.turbidity2, 0);
-        // Serial.print("V Bat ");  Serial.println(data.v_bat);
-        // Serial.print("V Panel ");  Serial.println(data.v_panel);
-        // Serial.print("Level ");  Serial.println(data.water_level);
         
         flowEnable();
         timeout.update = millis();
+
+        if(data.turbidity1 > 100){
+            closeValve1();
+            openValve2();
+        }
+        else{
+            closeValve2();
+            openValve1();
+        }
+
+        if(data.turbidity2 > 100){
+            closeValve3();
+            openValve4();
+        }
+        else{
+            closeValve4();
+            openValve3();
+        }
     }
     else{
         if((millis() - timeout.update_sensor) > TIMEOUT_SENSOR){
@@ -286,8 +295,8 @@ void processData(){
 
 void publishData(){
     /* DATA|valve1|valve2|turbidity1|turbidity2|level|flow|vbat|ibat|vpanel|ipanel*/
-    sprintf(text, "DATA|%d|%d|%0.0f|%0.0f|%0.0f|%0.0f|%0.2f|%0.2f|%0.2f|%0.2f", 
-                status.valve1, status.valve2, data.turbidity1, data.turbidity2, data.water_level, data.flow, data.v_bat, data.i_bat, data.v_panel, data.i_panel);
+    sprintf(text, "DATA|%d|%d|%0.0f|%0.0f|%0.0f|%0.0f|%0.2f|%0.2f|%0.2f|%0.2f|%d|%d", 
+                status.valve1, status.valve2, data.turbidity1, data.turbidity2, data.water_level, data.flow, data.v_bat, data.i_bat, data.v_panel, data.i_panel, status.valve3, status.valve4);
 
     mqttPublish(text);
 }
@@ -466,14 +475,16 @@ float turbidity1(){
     if(ads2.isConnected()){
         ads2.setGain(2);     // GAIN 2.048
 
-        int16_t raw = ads2.readADC(0);
+        int16_t raw = ads2.readADC(1);
         float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
 
         if(vTurbidity < 0){   vTurbidity = 0;   }
 
-        ntu = turbidityNtu(vTurbidity);
+        ntu = turbidityNtu(vTurbidity) - 2100;
+        
+        if(ntu < 0) ntu = 0;
 
-        Serial.println("end");
+        Serial.println(ntu);
     }
     else{
         Serial.println("Not Connect");
@@ -490,14 +501,16 @@ float turbidity2(){
     if(ads2.isConnected()){
         ads2.setGain(2);     // GAIN 2.048
 
-        int16_t raw = ads2.readADC(1);
+        int16_t raw = ads2.readADC(0);
         float vTurbidity = raw * ads2.toVoltage(1) * GAIN_TURBIDITY;
 
         if(vTurbidity < 0){   vTurbidity = 0;   }
 
-        ntu = turbidityNtu(vTurbidity) - 100;
+        ntu = turbidityNtu(vTurbidity) - 2050;
 
-        Serial.println("end");
+        if(ntu < 0) ntu = 0;
+
+        Serial.println(ntu);
     }
     else{
         Serial.println("Not Connect");
@@ -518,7 +531,7 @@ float vBatt(){
 
         if(vBat < 0){   vBat = 0;   }
 
-        Serial.println("end");
+        Serial.println(vBat);
     }
     else{
         Serial.println("Not Connect");
@@ -540,7 +553,7 @@ float iBatt(){
             iLoad = 0.0;
         }
 
-        Serial.println("end");
+        Serial.println(iLoad);
     }
     else{
         Serial.println("Not Connect");
@@ -562,7 +575,7 @@ float vPanel(){
 
         if(vPanel < 0){   vPanel = 0;   }
 
-        Serial.println("end");
+        Serial.println(vPanel);
     }
     else{
         Serial.println("Not Connect");
@@ -584,7 +597,7 @@ float iPanel(){
             iPanel = 0.0;
         }
 
-        Serial.println("end");
+        Serial.println(iPanel);
     }
     else{
         Serial.println("Not Connect");
@@ -617,6 +630,7 @@ float flowValue(uint32_t elapsed_time){
     // this case) coming from the sensor.
     float flowRate = ((1000.0 / elapsed_time) * data.flow_counter) / calibrationFactor;
 
+    Serial.printf("Flow %0.0f\r\n", flowRate);
     return flowRate;
 }
 
@@ -648,7 +662,6 @@ float waterLevel(){
     }
 
     Serial.print("Jarak "); Serial.println(level);
-    Serial.println(duration);
     return level;
 }
 
